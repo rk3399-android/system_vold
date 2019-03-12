@@ -15,14 +15,18 @@
  */
 
 #include "fs/Vfat.h"
+#include "fs/Ext4.h"
+#include "fs/F2fs.h"
+#include "fs/Ntfs.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
-
+#include <cutils/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
 #include <cutils/fs.h>
+#include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -95,7 +99,7 @@ status_t PublicVolume::doMount() {
     // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (mFsType != "vfat") {
+    /*if (mFsType != "vfat") {
         LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
@@ -103,7 +107,7 @@ status_t PublicVolume::doMount() {
     if (vfat::Check(mDevPath)) {
         LOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
-    }
+    }*/
 
     // Use UUID as stable name, if available
     std::string stableName = getId();
@@ -129,9 +133,71 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
-            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
-        PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+    if (mFsType == "vfat") {
+        int res = vfat::Check(mDevPath);
+        if (res == 0 || res == 1) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false,
+                AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+            PLOG(ERROR) << getId() << " vfat failed to mount " << mDevPath;
+            return -EIO;
+        }
+    } else if (mFsType == "ntfs") {
+	char value[PROPERTY_VALUE_MAX];
+	property_get("ro.factory.storage_suppntfs", value, "");
+	if (strcmp("true", value) == 0) {
+       		int res = Ntfs::check(mDevPath.c_str());
+        	if (res == 0 || res == 1) {
+        	    LOG(DEBUG) << getId() << " passed filesystem check";
+        	} else {
+        	    PLOG(ERROR) << getId() << " failed filesystem check";
+        	    return -EIO;
+        	}
+
+        	if (Ntfs::doMount(mDevPath.c_str(), mRawPath.c_str(), false, false, false)) {
+        	        PLOG(ERROR) << getId() << " nfts failed to mount " << mDevPath;
+        	        return -EIO;
+        	}
+	}
+	else
+	{
+		LOG(DEBUG) << getId() << "Not support Ntfs in BoardConfig";
+	}
+    } else if (mFsType == "ext4") {
+        int res = ext4::Check(mDevPath, mRawPath);
+        if (res == 0 || res == 1) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (ext4::Mount(mDevPath, mRawPath, false, false, true)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
+    } else if (mFsType == "f2fs") {
+        int res = f2fs::Check(mDevPath);
+        if (res == 0) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (f2fs::Mount(mDevPath, mRawPath)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
+    } else {
+        LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
 
@@ -141,9 +207,18 @@ status_t PublicVolume::doMount() {
 
     if (!(getMountFlags() & MountFlags::kVisible)) {
         // Not visible to apps, so no need to spin up FUSE
-        return OK;
+	char prop_value[PROPERTY_VALUE_MAX];
+	property_get("ro.udisk.visible", prop_value, "");
+	if(!strcmp("true",prop_value))
+	{
+		LOG(DEBUG)<<"------force all volume visible-----------";	
+	}
+	else
+	{
+		LOG(DEBUG)<<"----Not visible to apps, so no need to spin up FUSE----";
+		return OK;
+	}
     }
-
     if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
             fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
             fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {

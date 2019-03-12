@@ -74,7 +74,7 @@ status_t Format(const std::string& source) {
     cmd.push_back(kMkfsPath);
     cmd.push_back(source);
 
-    return ForkExecvp(cmd);
+    return ForkExecvp(cmd, sFsckContext);
 }
 
 }  // namespace f2fs

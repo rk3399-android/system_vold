@@ -11,6 +11,7 @@ common_src_files := \
 	fs/Ext4.cpp \
 	fs/F2fs.cpp \
 	fs/Vfat.cpp \
+	fs/Ntfs.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
@@ -35,6 +36,13 @@ common_src_files := \
 	secontext.cpp \
 	EncryptInplace.cpp \
 	MetadataCrypt.cpp \
+
+ifeq ($(strip $(BOARD_HAVE_DONGLE)),true)
+common_src_files += \
+	MiscManager.cpp \
+	Misc.cpp \
+	G3Dev.cpp
+endif
 
 common_c_includes := \
 	system/extras/f2fs_utils \
@@ -79,6 +87,10 @@ common_static_libraries := \
 # TODO: include "cert-err58-cpp" once 36656327 is fixed
 common_local_tidy_flags := -warnings-as-errors=clang-analyzer-security*,cert-*
 common_local_tidy_checks := -*,clang-analyzer-security*,cert-*,-cert-err34-c,-cert-err58-cpp
+
+ifeq ($(strip $(BOARD_HAVE_DONGLE)),true)
+	common_local_tidy_checks += ,-cert-env33-c
+endif
 
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
@@ -131,6 +143,10 @@ LOCAL_INIT_RC := vold.rc
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
+ifeq ($(strip $(BOARD_HAVE_DONGLE)),true)
+LOCAL_CFLAGS += -Werror=format
+LOCAL_CFLAGS += -DUSE_USB_MODE_SWITCH
+endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
